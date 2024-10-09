@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用 Web Speech API 與你的 AI 朋友互動聊天</title>
+</head>
+
+<body>
+  <div>
+    <p>可以輸入你的 OpenAI API Key 來與 AI 互動聊天。我不會儲存你的 API Key，請放心使用。</p>
+    <input type="text" id="apiKeyInput" placeholder="請輸入你的 OpenAI API Key">
+  </div>
+  <button id="talkButton">說話</button>
+  <p id="response">等待語音輸入...</p>
+
+  <script>
+    let voices = []
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    const utterance = new SpeechSynthesisUtterance();
+    const apiKey = document.getElementById('apiKeyInput');
+
+    recognition.lang = 'zh-TW';
+    utterance.lang = 'zh-TW';
+
+    window.speechSynthesis.onvoiceschanged = function () {
+      voices = window.speechSynthesis.getVoices();
+    };
+
+    document.getElementById('talkButton').addEventListener('click', function () {
+      recognition.start();
+    });
+
+    recognition.onresult = async function (event) {
+      const command = event.results[0][0].transcript;
+      document.getElementById('response').textContent = '你說的話: ' + command;
+
+      // 呼叫 OpenAI API
+      const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [{
+            'role': 'system',
+            // 'content': "你是一個很好的談心事的朋友，請以溫暖且堅定的口氣對話。"
+            'content': "你熱愛吐槽，對我說的話總是能雞蛋裡挑骨頭，找出許多負面的東西，但同時你又是我非常好的朋友，請帶著毒舌卻帶有一絲溫暖的對話。"
+          }, {
+            'role': 'user',
+            'content': command
+          }],
+          max_tokens: 300
+        })
+      });
+
+      const data = await openAIResponse.json();
+      const aiResponse = data.choices[0].message.content;
+
+      // 更新網頁顯示
+      document.getElementById('response').textContent = 'AI 回應: ' + aiResponse;
+
+      // 使用 SpeechSynthesis 播放 AI 的回應
+      utterance.text = aiResponse;
+      utterance.voice = voices.filter(voice => voice.lang === 'zh-TW')[1];
+      window.speechSynthesis.speak(utterance);
+    };
+
+    recognition.onerror = function (event) {
+      console.error('語音識別錯誤:', event.error);
+    };
+  </script>
+</body>
+
+</html>
