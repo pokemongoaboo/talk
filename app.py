@@ -1,30 +1,9 @@
 import streamlit as st
 import openai
 import os
-from gtts import gTTS
-import speech_recognition as sr
-import tempfile
-import base64
 
 # Set up OpenAI API key
 openai.api_key = os.getenv("OPENAI_API_KEY")
-
-def text_to_speech(text, lang='zh-TW'):
-    tts = gTTS(text=text, lang=lang)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
-        tts.save(fp.name)
-        return fp.name
-
-def autoplay_audio(file_path: str):
-    with open(file_path, "rb") as f:
-        data = f.read()
-        b64 = base64.b64encode(data).decode()
-        md = f"""
-            <audio autoplay="true">
-            <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-            </audio>
-            """
-        st.markdown(md, unsafe_allow_html=True)
 
 def get_ai_response(prompt):
     try:
@@ -42,6 +21,7 @@ def get_ai_response(prompt):
         return None
 
 def main():
+    st.set_page_config(page_title="AI 語音聊天", page_icon="🎤")
     st.title("用語音與你的 AI 朋友互動聊天")
 
     if "messages" not in st.session_state:
@@ -51,34 +31,55 @@ def main():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    if st.button("開始說話"):
-        recognizer = sr.Recognizer()
-        with sr.Microphone() as source:
-            st.write("正在聆聽...")
-            audio = recognizer.listen(source)
-            st.write("處理中...")
+    # 使用 HTML 和 JavaScript 來處理語音輸入和輸出
+    st.components.v1.html("""
+    <script>
+    let recognition;
+    function startSpeechRecognition() {
+        recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.lang = 'zh-TW';
+        recognition.onresult = function(event) {
+            const transcript = event.results[0][0].transcript;
+            document.getElementById('speech-input').value = transcript;
+            document.getElementById('submit-button').click();
+        };
+        recognition.start();
+    }
 
-        try:
-            user_input = recognizer.recognize_google(audio, language="zh-TW")
-            st.session_state.messages.append({"role": "user", "content": user_input})
+    function speakResponse(text) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'zh-TW';
+        speechSynthesis.speak(utterance);
+    }
+    </script>
+    <button onclick="startSpeechRecognition()">開始說話</button>
+    <input type="hidden" id="speech-input">
+    """, height=100)
+
+    user_input = st.empty()
+    speech_input = st.text_input("語音輸入結果", key="speech_input", label_visibility="hidden")
+
+    if st.button("發送", key="submit-button"):
+        if speech_input:
+            st.session_state.messages.append({"role": "user", "content": speech_input})
             with st.chat_message("user"):
-                st.markdown(user_input)
+                st.markdown(speech_input)
 
-            ai_response = get_ai_response(user_input)
+            ai_response = get_ai_response(speech_input)
             if ai_response:
                 st.session_state.messages.append({"role": "assistant", "content": ai_response})
                 with st.chat_message("assistant"):
                     st.markdown(ai_response)
                 
-                # Convert AI response to speech
-                speech_file = text_to_speech(ai_response)
-                autoplay_audio(speech_file)
-                os.unlink(speech_file)
+                # 使用 JavaScript 來播放 AI 回應
+                st.components.v1.html(f"""
+                <script>
+                speakResponse("{ai_response.replace('"', '\\"')}");
+                </script>
+                """)
 
-        except sr.UnknownValueError:
-            st.error("無法識別語音")
-        except sr.RequestError as e:
-            st.error(f"無法連接到 Google 語音識別服務; {e}")
+            # 清空輸入
+            user_input.text_input("語音輸入結果", value="", key="clear_input")
 
 if __name__ == "__main__":
     main()
