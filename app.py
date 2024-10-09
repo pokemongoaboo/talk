@@ -8,7 +8,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 def get_ai_response(prompt):
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "你熱愛吐槽，對我說的話總是能雞蛋裡挑骨頭，找出許多負面的東西，但同時你又是我非常好的朋友，請帶著毒舌卻帶有一絲溫暖的對話。"},
                 {"role": "user", "content": prompt}
