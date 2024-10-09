@@ -1,15 +1,18 @@
 import streamlit as st
 import os
 from openai import OpenAI
+import speech_recognition as sr
+from gtts import gTTS
+import io
+import base64
 
 # Set up OpenAI API key
-#openai.api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def get_ai_response(prompt):
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o-mini",  # 使用最新可用的模型
             messages=[
                 {"role": "system", "content": "你熱愛吐槽，對我說的話總是能雞蛋裡挑骨頭，找出許多負面的東西，但同時你又是我非常好的朋友，請帶著毒舌卻帶有一絲溫暖的對話。"},
                 {"role": "user", "content": prompt}
@@ -20,6 +23,12 @@ def get_ai_response(prompt):
     except Exception as e:
         st.error(f"Error in getting AI response: {str(e)}")
         return None
+
+def text_to_speech(text):
+    tts = gTTS(text=text, lang='zh-tw')
+    fp = io.BytesIO()
+    tts.write_to_fp(fp)
+    return fp.getvalue()
 
 def main():
     st.set_page_config(page_title="AI 語音聊天", page_icon="🎤")
@@ -32,55 +41,38 @@ def main():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # 使用 HTML 和 JavaScript 來處理語音輸入和輸出
-    st.components.v1.html("""
-    <script>
-    let recognition;
-    function startSpeechRecognition() {
-        recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-        recognition.lang = 'zh-TW';
-        recognition.onresult = function(event) {
-            const transcript = event.results[0][0].transcript;
-            document.getElementById('speech-input').value = transcript;
-            document.getElementById('submit-button').click();
-        };
-        recognition.start();
-    }
-
-    function speakResponse(text) {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'zh-TW';
-        speechSynthesis.speak(utterance);
-    }
-    </script>
-    <button onclick="startSpeechRecognition()">開始說話</button>
-    <input type="hidden" id="speech-input">
-    """, height=100)
-
-    user_input = st.empty()
-    speech_input = st.text_input("語音輸入結果", key="speech_input", label_visibility="hidden")
-
-    if st.button("發送", key="submit-button"):
-        if speech_input:
-            st.session_state.messages.append({"role": "user", "content": speech_input})
-            with st.chat_message("user"):
-                st.markdown(speech_input)
-
-            ai_response = get_ai_response(speech_input)
-            if ai_response:
-                st.session_state.messages.append({"role": "assistant", "content": ai_response})
-                with st.chat_message("assistant"):
-                    st.markdown(ai_response)
+    # 使用 speech_recognition 進行語音識別
+    r = sr.Recognizer()
+    if st.button("開始說話"):
+        with sr.Microphone() as source:
+            st.write("請說話...")
+            audio = r.listen(source)
+            try:
+                text = r.recognize_google(audio, language="zh-TW")
+                st.write(f"您說的是：{text}")
                 
-                # 使用 JavaScript 來播放 AI 回應
-                st.components.v1.html(f"""
-                <script>
-                speakResponse("{ai_response.replace('"', '\\"')}");
-                </script>
-                """)
+                # 處理用戶輸入
+                st.session_state.messages.append({"role": "user", "content": text})
+                with st.chat_message("user"):
+                    st.markdown(text)
 
-            # 清空輸入
-            user_input.text_input("語音輸入結果", value="", key="clear_input")
+                # 獲取 AI 回應
+                ai_response = get_ai_response(text)
+                if ai_response:
+                    st.session_state.messages.append({"role": "assistant", "content": ai_response})
+                    with st.chat_message("assistant"):
+                        st.markdown(ai_response)
+                    
+                    # 將 AI 回應轉換為語音
+                    audio_bytes = text_to_speech(ai_response)
+                    audio_base64 = base64.b64encode(audio_bytes).decode()
+                    audio_tag = f'<audio autoplay="true" src="data:audio/mp3;base64,{audio_base64}">'
+                    st.markdown(audio_tag, unsafe_allow_html=True)
+
+            except sr.UnknownValueError:
+                st.write("無法識別您的語音")
+            except sr.RequestError as e:
+                st.write(f"無法從Google Speech Recognition服務獲取結果; {e}")
 
 if __name__ == "__main__":
     main()
